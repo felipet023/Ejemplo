@@ -1,0 +1,247 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum RoleName {
+  ADMINISTRADOR
+  GERENTE
+  EVALUADOR
+}
+
+enum PositionName {
+  AUXILIAR
+  ASISTENTE
+  GERENTE
+}
+
+enum ClientTypeName {
+  NORMAL
+  INDECISO
+  DIFICIL
+  CRITICO
+}
+
+enum Difficulty {
+  BAJA
+  MEDIA
+  ALTA
+  EXTREMA
+}
+
+enum QuestionType {
+  MULTIPLE_CHOICE
+  HYPOTHETICAL
+  TRUE_FALSE
+  ORDERING
+  PRACTICAL_CASE
+}
+
+enum EvaluationStatus {
+  DRAFT
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum ResultLabel {
+  EXCELENTE
+  APTO
+  REQUIERE_CAPACITACION
+  NO_APTO
+}
+
+enum EmployeeStatus {
+  ACTIVE
+  INACTIVE
+}
+
+model Role {
+  id    String   @id @default(cuid())
+  name  RoleName @unique
+  users User[]
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  fullName     String
+  roleId       String
+  role         Role     @relation(fields: [roleId], references: [id])
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  activityLogs ActivityLog[]
+}
+
+model Department {
+  id        String     @id @default(cuid())
+  name      String     @unique
+  employees Employee[]
+}
+
+model Employee {
+  id            String         @id @default(cuid())
+  identifier    String         @unique
+  fullName      String
+  position      PositionName
+  departmentId  String?
+  department    Department?    @relation(fields: [departmentId], references: [id])
+  status        EmployeeStatus @default(ACTIVE)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  evaluations   Evaluation[]
+  activityLogs  ActivityLog[]
+
+  @@index([fullName])
+  @@index([position])
+}
+
+model ClientType {
+  id          String         @id @default(cuid())
+  name        ClientTypeName @unique
+  difficulty  Difficulty
+  description String?
+  competences Competence[]
+  questions   Question[]
+  evaluations Evaluation[]
+}
+
+model Competence {
+  id           String      @id @default(cuid())
+  name         String
+  description  String?
+  clientTypeId String?
+  clientType   ClientType? @relation(fields: [clientTypeId], references: [id])
+  questions    Question[]
+
+  @@unique([name, clientTypeId])
+}
+
+model Question {
+  id            String       @id @default(cuid())
+  questionId    String       @unique
+  type          QuestionType
+  statement     String
+  competence    String
+  difficulty    Difficulty
+  options       Json
+  correctAnswer Json
+  explanation   String?
+  maxScore      Int          @default(20)
+  evaluationRubric Json?
+  isBackup      Boolean      @default(false)
+  isActive      Boolean      @default(true)
+  approved      Boolean      @default(false)
+  position      PositionName?
+  clientTypeId  String?
+  clientType    ClientType?  @relation(fields: [clientTypeId], references: [id])
+  competenceId  String?
+  competenceRef Competence?  @relation(fields: [competenceId], references: [id])
+  evaluations   Evaluation[] @relation("EvaluationQuestions")
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  answers       Answer[]
+
+  @@index([position, clientTypeId])
+  @@index([isBackup])
+}
+
+model Evaluation {
+  id                 String           @id @default(cuid())
+  employeeId         String
+  employee           Employee         @relation(fields: [employeeId], references: [id])
+  clientTypeId       String
+  clientType         ClientType       @relation(fields: [clientTypeId], references: [id])
+  position           PositionName
+  status             EvaluationStatus @default(DRAFT)
+  totalScore         Int?
+  resultLabel        ResultLabel?
+  startedAt          DateTime         @default(now())
+  completedAt        DateTime?
+  timeUsedSeconds    Int?
+  rulesVersion       String           @default("1.0")
+  recommendations   String?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  questions          Question[]       @relation("EvaluationQuestions")
+  answers            Answer[]
+  result             Result?
+
+  @@index([employeeId])
+  @@index([clientTypeId])
+}
+
+model Answer {
+  id           String     @id @default(cuid())
+  evaluationId String
+  evaluation   Evaluation @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
+  questionId   String
+  question     Question   @relation(fields: [questionId], references: [id])
+  answer       Json
+  score        Int        @default(0)
+  isCorrect    Boolean?
+  feedback     String?
+  createdAt    DateTime   @default(now())
+
+  @@unique([evaluationId, questionId])
+}
+
+model Result {
+  id             String       @id @default(cuid())
+  evaluationId   String       @unique
+  evaluation     Evaluation   @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
+  score          Int
+  label          ResultLabel
+  competenceScores Json
+  criticalErrors Json?
+  createdAt      DateTime     @default(now())
+}
+
+model EligibilityMatrix {
+  id           String         @id @default(cuid())
+  position     PositionName
+  clientType   ClientTypeName
+  allowed      Boolean        @default(false)
+  updatedAt    DateTime       @updatedAt
+
+  @@unique([position, clientType])
+}
+
+model ActivityLog {
+  id          String   @id @default(cuid())
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id])
+  employeeId  String?
+  employee    Employee? @relation(fields: [employeeId], references: [id])
+  action      String
+  entity      String?
+  entityId    String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+model AiConfig {
+  id          String   @id @default(cuid())
+  provider    String   @default("none")
+  model       String?
+  timeoutMs   Int      @default(30000)
+  maxRetries  Int      @default(2)
+  isActive    Boolean  @default(false)
+  updatedAt   DateTime @updatedAt
+}
+
+model QuestionGenerationLog {
+  id          String   @id @default(cuid())
+  employeeId  String?
+  position    PositionName
+  clientType  ClientTypeName
+  questionIds Json
+  createdAt   DateTime @default(now())
+}
